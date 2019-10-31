@@ -1,0 +1,16 @@
+ReadIndex
+VNMPMS_TEST
+dump
+
+Debug
+Release
+*/Debug
+*/Release
+*.zip
+*.rar
+ipch
+*.aps
+*.user
+*.suo
+*.sdf
+*.opensdf
