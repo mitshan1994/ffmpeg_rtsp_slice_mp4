@@ -61,10 +61,6 @@ int _tmain(int argc, _TCHAR* argv[])
 	strcpy(exeName,"ffmpeg_slice_segment.exe");
 	GetModuleFileName(GetModuleHandle(exeName), CurrentPath, MAX_PATH);
 
-	//char path[MAX_PATH];
-	//GetCurrentDirectory(MAX_PATH, path);
-	//printf("cwd: %s\n", path);
-
 	char * p = CurrentPath;
 	while(strchr(p,'\\')){ p = strchr(p,'\\'); p++; }
 	*p = '\0';
@@ -72,6 +68,10 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	g_log.InitLog("./log/slice_segment_");
 	g_log.Add("--------------- Start -----------------");
+
+	//char path[MAX_PATH];
+	//GetCurrentDirectory(MAX_PATH, path);
+	//g_log.Add("cwd: %s\n", path);
 
 	// 读取配置文件
 	const char *szConfigFile = "./ffmpeg_slice_segment.ini";
@@ -91,7 +91,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		g_log.Add("Output directory empty. exit");
 		return 0;
 	} else {
-		if (g_szDestDir[dirLen - 1] != '\\' || g_szDestDir[dirLen - 1] != '/') {
+		if (g_szDestDir[dirLen - 1] != '\\' && g_szDestDir[dirLen - 1] != '/') {
 			g_szDestDir[dirLen] = '\\';
 			g_szDestDir[dirLen + 1] = '\0';
 		}
@@ -217,6 +217,9 @@ std::string GetISOFileNameFromTime(SYSTEMTIME *sysTime);
 // Format得到文件名 ****.mp4, 其中****为自从1970后的秒数.
 std::string GetEpochSecondFileNameFromTime(SYSTEMTIME *sysTime);
 
+// 删除给定目录下, 所有已经至少存在了nMinutes分钟的所有文件.
+void DeleteEarlierFilesInDir(const char *szDir, int nMinutes);
+
 void ThreadAConcatFiles()
 {
 	// 首先获取下一个拼接的文件的时间点.
@@ -255,7 +258,7 @@ void ThreadAConcatFiles()
 			::Sleep(100);
 		}
 
-		g_log.Add("time diff : %lld", SystemTimeDiff(&nowTime, &endTime));
+		//g_log.Add("time diff : %lld", SystemTimeDiff(&nowTime, &endTime));
 
 		// 首先查找当前时间点之后几秒对应的文件是否存在.
 		// 从endTime开始找, 可以考虑找到更后面的一个时间点.
@@ -379,9 +382,10 @@ void ThreadAConcatFiles()
 void ThreadBDeleteFiles()
 {
 	while (true) {
-		// TODO
+		DeleteEarlierFilesInDir(g_szDestDir, g_expireMinutes);
+		DeleteEarlierFilesInDir(g_szTmpDir, g_expireMinutes);
 
-		Sleep(1000);
+		::Sleep(5 * 60 * 1000); // TODO 最终需要延长检查的时间间隔.
 	}
 }
 
@@ -515,4 +519,70 @@ void LogSystemTime(const char *prefix, SYSTEMTIME *pSysTime)
 	g_log.Add("%s : %d-%d-%d %d:%d:%d", prefix, pSysTime->wYear,
 		pSysTime->wMonth, pSysTime->wDay, pSysTime->wHour, pSysTime->wMinute,
 		pSysTime->wSecond);
+}
+
+// szDir可能以'/'或者'\'结尾, 也可能不以它们两个之一结尾, 实现需要处理这种情况.
+void DeleteEarlierFilesInDir(const char *szDir, int nMinutes)
+{
+	char szPath[256];
+	int len = strlen(szDir);
+	const char *szSuffix;
+	
+	if (szDir[len - 1] == '/' || szDir[len - 1] == '\\') {
+		szSuffix = "*";
+	} else {
+		szSuffix = "/*";
+	}
+	sprintf(szPath, "%s%s", szDir, szSuffix);
+	
+	//g_log.Add("Delete files in %s", szPath);
+
+	// 开始查找文件.
+	WIN32_FIND_DATA findFileData;
+	HANDLE hFind;
+
+	hFind = FindFirstFileA(szPath, &findFileData);
+	if (INVALID_HANDLE_VALUE == hFind) {
+		g_log.Add("FindFirstFileA failed. Error: %d", GetLastError());
+		return;
+	}
+
+	SYSTEMTIME sysTime;
+	::GetSystemTime(&sysTime);
+	int secondsBound = nMinutes * 60;
+	int numDeleted = 0;
+
+	// 将szPath恢复到包含后缀slash/backslash的状态.
+	szPath[strlen(szPath) - 1] = '\0';
+
+	do {
+		BOOL isFile = !(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+		if (isFile) {
+			FILETIME lastModifyTime = findFileData.ftLastWriteTime;
+			SYSTEMTIME lastModifySysTime;
+			BOOL bConvert = ::FileTimeToSystemTime(&lastModifyTime, &lastModifySysTime);
+			if (!bConvert) {
+				g_log.Add("DeleteEarlierFilesInDir FileTimeToSystemTime failed. %d", GetLastError());
+				continue;
+			}
+
+			int diffSeconds = SystemTimeDiff(&sysTime, &lastModifySysTime);
+			if (diffSeconds > secondsBound) {
+				// 删除文件.
+				char szFileName[256];
+				sprintf(szFileName, "%s%s", szPath, findFileData.cFileName);
+				//g_log.Add("Delete file : %s. expire minutes: %d", szFileName, diffSeconds / 60);
+				BOOL bDelete = DeleteFileA(szFileName);
+				if (!bDelete) {
+					g_log.Add("Delete %s FAILED. error: %d", GetLastError());
+				} else {
+					++numDeleted;
+				}
+			}
+		}
+	} while (FindNextFileA(hFind, &findFileData));
+
+	g_log.Add("Delete %d files in %s.", numDeleted, szPath);
+
+	::FindClose(hFind);
 }

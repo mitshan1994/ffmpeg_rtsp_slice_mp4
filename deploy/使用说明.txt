@@ -1,0 +1,5 @@
+启动服务:
+1. 修改ffmpeg_slice_segment.ini配置文件, 调整一些参数.
+2. 以管理员身份运行start.bat启动服务.
+
+如果要停止服务, 以管理员身份运行stop.bat就行了.
