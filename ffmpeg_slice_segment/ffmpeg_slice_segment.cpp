@@ -302,6 +302,7 @@ void ThreadAConcatFiles()
 		}
 		if (fileNames.empty()) {
 			g_log.Add("no file to create %lld.mp4", secSinceEpoch);
+			continue;
 		}
 
 		// 将所有的文件名, 都写入到对应的文件中.
