@@ -45,7 +45,7 @@ const char *g_szFileList = "./file_list.txt";  // 存放用于concat的所有mp4文件名.
 int g_mp4FileSeconds = 0;  // 每个MP4文件的时间长度
 int g_expireMinutes = 0;
 char g_szRtspUrl[256];
-char g_szDestDir[256];     // 处理完以后, 是以'\'结尾的.
+char g_szDestDir[256];     // 处理完以后, 是以'/'结尾的.
 
 void ThreadAConcatFiles();
 void ThreadBDeleteFiles();
@@ -87,12 +87,18 @@ int _tmain(int argc, _TCHAR* argv[])
 	GetPrivateProfileStringA(szAppname, szKeyDestDir, "C:\\rukoujuchao_mp4", g_szDestDir, sizeof(g_szDestDir), szConfigFile);
 
 	int dirLen = strlen(g_szDestDir);
+	// 将目录中的反斜杠, 换成斜杠(ffmpeg命令中可能斜杠比较好)
+	for (int i = 0; i != dirLen; ++i) {
+		if (g_szDestDir[i] == '\\') {
+			g_szDestDir[i] = '/';
+		}
+	}
 	if (dirLen <= 0) {
 		g_log.Add("Output directory empty. exit");
 		return 0;
 	} else {
 		if (g_szDestDir[dirLen - 1] != '\\' && g_szDestDir[dirLen - 1] != '/') {
-			g_szDestDir[dirLen] = '\\';
+			g_szDestDir[dirLen] = '/';
 			g_szDestDir[dirLen + 1] = '\0';
 		}
 	}
@@ -325,7 +331,7 @@ void ThreadAConcatFiles()
 
 		// 开始创建子进程, 进行文件的拼接.
 		char szConcatFileName[256];
-		sprintf(szConcatFileName, "%s/%lld.mp4", g_szTmpDir, secSinceEpoch);
+		sprintf(szConcatFileName, "%s%lld_.mp4", g_szDestDir, secSinceEpoch);
 		char szCmdConcat[1024];
 		sprintf(szCmdConcat, 
 			"./ffmpeg -safe 0 -f concat -i %s -c copy %s",
@@ -369,13 +375,13 @@ void ThreadAConcatFiles()
 		::CloseHandle(pi.hProcess);
 		::CloseHandle(pi.hThread);
 
-		// 将生成的文件, 拷贝到目标文件夹下.
-		BOOL bCopySuccess;
+		// 将生成的文件, 更改文件名.
+		BOOL bMoveSuccess;
 		char szDestFileName[256];
 		sprintf(szDestFileName, "%s%lld.mp4", g_szDestDir, secSinceEpoch);
-		bCopySuccess = ::CopyFileA(szConcatFileName, szDestFileName, FALSE);
-		if (!bCopySuccess) {
-			g_log.Add("copy file %s failed.", szDestFileName);
+		bMoveSuccess = ::MoveFileA(szConcatFileName, szDestFileName);
+		if (!bMoveSuccess) {
+			g_log.Add("rename file %s failed.", szDestFileName);
 		}
 	}
 }
