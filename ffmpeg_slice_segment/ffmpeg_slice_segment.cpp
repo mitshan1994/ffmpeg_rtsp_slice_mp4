@@ -80,11 +80,23 @@ int _tmain(int argc, _TCHAR* argv[])
 	const char *szKeyFileSeconds = "file_time_length";
 	const char *szKeyDestDir = "dest_dir";
 	const char *szKeyExpire = "expire";
+	const char *szUseRtspTcp = "use_tcp";
 
 	g_mp4FileSeconds = GetPrivateProfileIntA(szAppname, szKeyFileSeconds, 6, szConfigFile);
 	g_expireMinutes = GetPrivateProfileIntA(szAppname, szKeyExpire, 12, szConfigFile);
 	GetPrivateProfileStringA(szAppname, szKeyRtspurl, "", g_szRtspUrl, sizeof(g_szRtspUrl), szConfigFile);
 	GetPrivateProfileStringA(szAppname, szKeyDestDir, "C:\\rukoujuchao_mp4", g_szDestDir, sizeof(g_szDestDir), szConfigFile);
+
+	int useTcp;
+	useTcp = GetPrivateProfileIntA(szAppname, szUseRtspTcp, 0, szConfigFile);
+	char szOptionTcp[100];
+	memset(szOptionTcp, 0, sizeof(szOptionTcp));
+	if (1 == useTcp) {
+		sprintf_s(szOptionTcp, "-rtsp_transport tcp");
+		g_log.Add("use RTSP TCP");
+	} else {
+		g_log.Add("use RTSP UDP");
+	}
 
 	int dirLen = strlen(g_szDestDir);
 	// 将目录中的反斜杠, 换成斜杠(ffmpeg命令中可能斜杠比较好)
@@ -145,8 +157,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	// 参考https://docs.microsoft.com/en-us/windows/win32/procthread/creating-processes
 	char szCmd[1024];
 	sprintf(szCmd, 
-		".\\ffmpeg -stimeout 5000000 -i %s -c copy -f segment -strftime 1 -segment_atclocktime 1 "
+		".\\ffmpeg %s -stimeout 5000000 -i %s -c copy "
+		"-f segment -strftime 1 -segment_atclocktime 1 "
 		"-segment_time 2 -segment_format mp4 \"%s\\F_%%Y%%m%%dT%%H%%M%%SZ.mp4\"",
+		szOptionTcp,
 		g_szRtspUrl,
 		g_szTmpDir
 		);
