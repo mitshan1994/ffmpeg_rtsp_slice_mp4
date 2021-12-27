@@ -33,6 +33,7 @@ ffmpeg -ss 00:00:02 -i origin.mp4 -t 00:00:05 -vcodec copy -acodec copy newfile.
 
 #include "stdafx.h"
 #include "MyLog.h"
+#include "Dbghelp.h"
 
 #define MY_NANO_SECOND 10000000
 
@@ -53,9 +54,54 @@ void ThreadBDeleteFiles();
 // 如果找到了, 返回true. 否则返回false.
 bool IsFileExist(const char *szFileName);
 
+LONG WINAPI MyException(struct   _EXCEPTION_POINTERS   *ExceptionInfo)   
+{   
+	struct tm *local; 
+	time_t t = time(NULL); 
+	local = localtime(&t);
+
+	char chYMD[256]; memset(chYMD, 0, 256);
+	sprintf(chYMD, "dump_%04d%02d%02d_%02d%02d%02d.dmp", local->tm_year + 1900, local->tm_mon + 1, local->tm_mday,
+		local->tm_hour, local->tm_min, local->tm_sec);
+	std::string tmplogpath;
+	tmplogpath += "./log/";
+	tmplogpath += chYMD ;
+
+	HANDLE hFile = ::CreateFileA(  
+		tmplogpath.c_str(),   
+		GENERIC_WRITE,   
+		0,   
+		NULL,   
+		CREATE_ALWAYS,   
+		FILE_ATTRIBUTE_NORMAL,   
+		NULL);  
+	if(INVALID_HANDLE_VALUE != hFile)  
+	{  
+		MINIDUMP_EXCEPTION_INFORMATION einfo;  
+		einfo.ThreadId          = ::GetCurrentThreadId();  
+		einfo.ExceptionPointers = ExceptionInfo;  
+		einfo.ClientPointers    = FALSE;  
+
+		::MiniDumpWriteDump(  
+			::GetCurrentProcess(),   
+			::GetCurrentProcessId(),   
+			hFile,   
+			MiniDumpWithFullMemory,   
+			&einfo,   
+			NULL,   
+			NULL);  
+		::CloseHandle(hFile);  
+	}  
+
+	return EXCEPTION_EXECUTE_HANDLER; 
+}
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 	printf("begin\n");
+
+	SetErrorMode( SEM_NOGPFAULTERRORBOX|SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX );
+	SetUnhandledExceptionFilter(&MyException);
 
 	char exeName[MAX_PATH], CurrentPath[MAX_PATH];
 	strcpy(exeName,"ffmpeg_slice_segment.exe");
@@ -595,7 +641,7 @@ void DeleteEarlierFilesInDir(const char *szDir, int nMinutes)
 				//g_log.Add("Delete file : %s. expire minutes: %d", szFileName, diffSeconds / 60);
 				BOOL bDelete = DeleteFileA(szFileName);
 				if (!bDelete) {
-					g_log.Add("Delete %s FAILED. error: %d", GetLastError());
+					g_log.Add("Delete %s FAILED. error: %d", szFileName, GetLastError());
 				} else {
 					++numDeleted;
 				}
