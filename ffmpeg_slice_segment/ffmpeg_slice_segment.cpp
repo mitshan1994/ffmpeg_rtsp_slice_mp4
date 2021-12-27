@@ -197,7 +197,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		// 将子进程加入Job.
 		BOOL bAssignJob = ::AssignProcessToJobObject(hJob, pi.hProcess);
 		if (!bAssignJob) {
-			g_log.Add("AssignProcessToJobObject failed. Error: %d", GetLastError);
+			g_log.Add("AssignProcessToJobObject failed. Error: %d", GetLastError());
 		}
 
 		WaitForSingleObject(pi.hProcess, INFINITE);
