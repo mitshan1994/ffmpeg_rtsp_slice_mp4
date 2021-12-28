@@ -34,13 +34,17 @@ ffmpeg -ss 00:00:02 -i origin.mp4 -t 00:00:05 -vcodec copy -acodec copy newfile.
 #include "stdafx.h"
 #include "MyLog.h"
 #include "Dbghelp.h"
+#include <string>
+#include <boost/atomic.hpp>
+
+using namespace std;
 
 #define MY_NANO_SECOND 10000000
 
 CMyLog g_log;
 
 const char *g_szTmpDir = "./tmp_mp4";
-const char *g_szFileList = "./file_list.txt";  // 存放用于concat的所有mp4文件名.
+boost::atomic<int> g_fileCount(0);
 
 // 相关配置
 int g_mp4FileSeconds = 0;  // 每个MP4文件的时间长度
@@ -50,6 +54,8 @@ char g_szDestDir[256];     // 处理完以后, 是以'/'结尾的.
 
 void ThreadAConcatFiles();
 void ThreadBDeleteFiles();
+
+void SubThreadConcatFiles(string listFile, int64_t secSinceEpoch);
 
 // 如果找到了, 返回true. 否则返回false.
 bool IsFileExist(const char *szFileName);
@@ -343,7 +349,7 @@ void ThreadAConcatFiles()
 			if (foundFlag) {
 				break;
 			}
-			::Sleep(200);
+			::Sleep(100);
 			::GetSystemTime(&nowTime);
 		} while (SystemTimeDiff(&nowTime, &waitEndTime) < 0);
 
@@ -371,10 +377,13 @@ void ThreadAConcatFiles()
 			continue;
 		}
 
+		char szFileList[256];
+		sprintf(szFileList, "./filelist_%d.txt", ++g_fileCount);
+
 		// 将所有的文件名, 都写入到对应的文件中.
-		FILE *fp = fopen(g_szFileList, "w");
+		FILE *fp = fopen(szFileList, "w");
 		if (fp == NULL) {
-			g_log.Add("open file %s failed.", g_szFileList);
+			g_log.Add("open file %s failed.", szFileList);
 			continue;
 		}
 		for (auto it = fileNames.begin(); it != fileNames.end(); ++it) {
@@ -389,16 +398,26 @@ void ThreadAConcatFiles()
 		}
 		fclose(fp);
 
-		// 开始创建子进程, 进行文件的拼接.
-		char szConcatFileName[256];
-		sprintf(szConcatFileName, "%s%lld_.mp4", g_szDestDir, secSinceEpoch);
-		char szCmdConcat[1024];
-		sprintf(szCmdConcat, 
-			"./ffmpeg -safe 0 -f concat -i %s -c copy %s",
-			g_szFileList,
-			szConcatFileName
-			);
+		boost::thread subThreadConcat(
+			boost::bind(SubThreadConcatFiles, string(szFileList), secSinceEpoch));
+		
+		subThreadConcat.detach();
+	}
+}
 
+void SubThreadConcatFiles(string listFile, int64_t secSinceEpoch)
+{
+	// 开始创建子进程, 进行文件的拼接.
+	char szConcatFileName[256];
+	sprintf(szConcatFileName, "%s%lld_.mp4", g_szDestDir, secSinceEpoch);
+	char szCmdConcat[1024];
+	sprintf(szCmdConcat, 
+		"./ffmpeg -safe 0 -f concat -i %s -c copy %s",
+		listFile.c_str(),
+		szConcatFileName
+		);
+	do 
+	{
 		STARTUPINFO si;
 		PROCESS_INFORMATION pi;
 
@@ -417,19 +436,19 @@ void ThreadAConcatFiles()
 			NULL,           // Use parent's starting directory 
 			&si,            // Pointer to STARTUPINFO structure
 			&pi )           // Pointer to PROCESS_INFORMATION structure
-		) 
+			) 
 		{
 			g_log.Add("CreateProcess failed in A (%d).\n", GetLastError());
-			continue;
+			break;
 		}
 
-		DWORD dwRet = ::WaitForSingleObject(pi.hProcess, 3000);
+		DWORD dwRet = ::WaitForSingleObject(pi.hProcess, 10000);
 		if (dwRet == WAIT_TIMEOUT) {
 			g_log.Add("concat doesn't finish in time. abort. %s", szConcatFileName);
 			::TerminateProcess(pi.hProcess, 0);
 			::CloseHandle(pi.hProcess);
 			::CloseHandle(pi.hThread);
-			continue;
+			break;
 		}
 
 		::CloseHandle(pi.hProcess);
@@ -443,6 +462,12 @@ void ThreadAConcatFiles()
 		if (!bMoveSuccess) {
 			g_log.Add("rename file %s failed.", szDestFileName);
 		}
+	} while (0);
+
+	// 删除filelist文件
+	BOOL bDelete = DeleteFileA(listFile.c_str());
+	if (!bDelete) {
+		g_log.Add("Delete %s FAILED. error: %d", listFile.c_str(), GetLastError());
 	}
 }
 
