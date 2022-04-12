@@ -1,0 +1,8 @@
+{
+    "stat": "1",
+    "rtspurl": "rtsp://127.0.0.1/12345",
+    "use_tcp": "1",
+    "file_time_length": "15",
+    "dest_dir": "D:\\video",
+    "expire": "60"
+}
