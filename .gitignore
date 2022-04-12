@@ -19,3 +19,5 @@ ipch
 *.mp4
 log
 file_list.txt
+deploy
+.vs

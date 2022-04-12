@@ -33,6 +33,7 @@ ffmpeg -ss 00:00:02 -i origin.mp4 -t 00:00:05 -vcodec copy -acodec copy newfile.
 
 #include "stdafx.h"
 #include "MyLog.h"
+#include "GetConfigInfo.h"
 #include "Dbghelp.h"
 #include <string>
 #include <boost/atomic.hpp>
@@ -111,12 +112,12 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	char exeName[MAX_PATH], CurrentPath[MAX_PATH];
 	strcpy(exeName,"ffmpeg_slice_segment.exe");
-	GetModuleFileName(GetModuleHandle(exeName), CurrentPath, MAX_PATH);
+	GetModuleFileNameA(GetModuleHandle(exeName), CurrentPath, MAX_PATH);
 
 	char * p = CurrentPath;
 	while(strchr(p,'\\')){ p = strchr(p,'\\'); p++; }
 	*p = '\0';
-	SetCurrentDirectory(CurrentPath);
+	SetCurrentDirectoryA(CurrentPath);
 
 	g_log.InitLog("./log/slice_segment_");
 	g_log.Add("--------------- Start -----------------");
@@ -125,22 +126,32 @@ int _tmain(int argc, _TCHAR* argv[])
 	//GetCurrentDirectory(MAX_PATH, path);
 	//g_log.Add("cwd: %s\n", path);
 
-	// ∂¡»°≈‰÷√Œƒº˛
-	const char *szConfigFile = "./ffmpeg_slice_segment.ini";
-	const char *szAppname = "CONFIG";
-	const char *szKeyRtspurl = "rtspurl";
-	const char *szKeyFileSeconds = "file_time_length";
-	const char *szKeyDestDir = "dest_dir";
-	const char *szKeyExpire = "expire";
-	const char *szUseRtspTcp = "use_tcp";
+	string rtspurl;
+    int useTcp;
+    int fileTimeLength;
+    string dstDir;
+    int expireMinutes;
 
-	g_mp4FileSeconds = GetPrivateProfileIntA(szAppname, szKeyFileSeconds, 6, szConfigFile);
-	g_expireMinutes = GetPrivateProfileIntA(szAppname, szKeyExpire, 12, szConfigFile);
-	GetPrivateProfileStringA(szAppname, szKeyRtspurl, "", g_szRtspUrl, sizeof(g_szRtspUrl), szConfigFile);
-	GetPrivateProfileStringA(szAppname, szKeyDestDir, "C:\\rukoujuchao_mp4", g_szDestDir, sizeof(g_szDestDir), szConfigFile);
+	int ret = GetRecordConfig(rtspurl, useTcp, fileTimeLength, dstDir, expireMinutes);
+	if (ret < 0) {
+        g_log.Add("Get record config failed. ret = %d. EXIT.", ret);
+        g_log.Add("|||||||||||||||||||||||||||||||||||");
+        return 0;
+    } else if (ret > 0) {
+        g_log.Add("Record disabled for stat != 1.");
+        return 0;
+    }
 
-	int useTcp;
-	useTcp = GetPrivateProfileIntA(szAppname, szUseRtspTcp, 0, szConfigFile);
+    g_mp4FileSeconds = fileTimeLength;
+    g_expireMinutes = expireMinutes;
+    strncpy(g_szRtspUrl, rtspurl.c_str(), sizeof(g_szRtspUrl));
+    strncpy(g_szDestDir, dstDir.c_str(), sizeof(g_szDestDir));
+
+	if (g_mp4FileSeconds <= 0 || g_expireMinutes <= 0) {
+        g_log.Add("Mp4 file time length/Expire minutes MUST be positive.");
+        return -1;
+	}
+
 	char szOptionTcp[100];
 	memset(szOptionTcp, 0, sizeof(szOptionTcp));
 	if (1 == useTcp) {

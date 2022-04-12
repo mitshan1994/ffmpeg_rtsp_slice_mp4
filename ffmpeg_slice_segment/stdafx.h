@@ -7,6 +7,7 @@
 
 #include "targetver.h"
 
+#include <winsock2.h>
 #include <stdio.h>
 #include <tchar.h>
 
